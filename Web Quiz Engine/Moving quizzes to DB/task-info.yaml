@@ -1,0 +1,831 @@
+type: edu
+custom_name: stage4
+files:
+- name: build.gradle
+  visible: true
+  text: |
+    plugins {
+        id 'org.springframework.boot' version '2.2.2.RELEASE'
+        id 'java'
+    }
+
+    apply plugin: 'io.spring.dependency-management'
+
+    sourceCompatibility = '11'
+
+    repositories {
+        mavenCentral()
+    }
+
+    sourceSets.main.resources.srcDirs = ["src/resources"]
+
+    dependencies {
+        implementation 'org.springframework.boot:spring-boot-starter'
+        implementation 'org.springframework.boot:spring-boot-starter-actuator'
+        compile("org.springframework.boot:spring-boot-starter-web")
+    }
+  learner_created: false
+- name: src/engine/WebQuizEngine.java
+  visible: true
+  text: |
+    package engine;
+
+    import org.springframework.boot.SpringApplication;
+    import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+    import java.util.Arrays;
+
+    @SpringBootApplication
+    public class WebQuizEngine {
+
+        public static void main(String[] args) {
+            SpringApplication.run(WebQuizEngine.class, args);
+            System.out.println("Hello Hashem, Lets start...");
+        }
+
+    }
+  learner_created: false
+- name: src/resources/application.properties
+  visible: true
+  text: |
+    server.port=8889
+    management.endpoints.web.exposure.include=*
+    management.endpoint.shutdown.enabled=true
+  learner_created: false
+- name: src/engine/Model/QuizResponse.java
+  visible: true
+  text: |
+    package engine.Model;
+
+    public class QuizResponse {
+        private boolean success;
+        private String feedback;
+
+        public QuizResponse(boolean success, String feedback) {
+            this.success = success;
+            this.feedback = feedback;
+        }
+
+        public boolean getSuccess() {
+            return success;
+        }
+
+        public void setSuccess(boolean success) {
+            this.success = success;
+        }
+
+        public String getFeedback() {
+            return feedback;
+        }
+
+        public void setFeedback(String feedback) {
+            this.feedback = feedback;
+        }
+    }
+  learner_created: false
+- name: src/engine/Controller/QuizController.java
+  visible: true
+  text: |+
+    package engine.Controller;
+
+    import engine.Model.Answer;
+    import engine.Model.Quiz;
+    import engine.Model.QuizResponse;
+
+    import engine.ObjectRepository.QuizRepository;
+    import org.springframework.beans.factory.annotation.Autowired;
+    import org.springframework.http.HttpHeaders;
+    import org.springframework.http.HttpStatus;
+    import org.springframework.http.MediaType;
+    import org.springframework.http.ResponseEntity;
+    import org.springframework.web.bind.MethodArgumentNotValidException;
+    import org.springframework.web.bind.annotation.*;
+    import org.springframework.web.server.ResponseStatusException;
+
+    import javax.validation.Valid;
+    import java.util.ArrayList;
+    import java.util.Arrays;
+    import java.util.List;
+    import java.util.stream.Collectors;
+
+    @RestController()
+    public class QuizController {
+        //private List<Quiz> quizzes = new ArrayList<>();
+        private QuizRepository quizzes;
+
+        @Autowired
+        public QuizController(QuizRepository repository) {
+            this.quizzes = repository;
+
+        }
+
+        @GetMapping("api/quiz")
+        public ResponseEntity<Quiz> getQuiz() {
+            ArrayList<String> options = new ArrayList<>();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            options.add("Robot");
+            options.add("Tea leaf");
+            options.add("Cup of coffee");
+            options.add("Bug");
+            Quiz quiz = new Quiz("The Java Logo","What is depicted on the Java logo?", options, null);
+            return new ResponseEntity(quiz, headers, HttpStatus.OK);
+        }
+        @PostMapping(value = "api/quiz",consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+        public ResponseEntity<QuizResponse> solveQuiz(@ModelAttribute("answer") int answer) {
+            QuizResponse response;
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            if (answer == 2) {
+                response = new QuizResponse(true, "Congratulations, you're right!");
+            }
+            else {
+                response = new QuizResponse(false, "Wrong answer! Please, try again.");
+            }
+            return new ResponseEntity(response,headers,HttpStatus.OK);
+        }
+
+        @PostMapping("/api/quizzes")
+        public ResponseEntity<Quiz> addQuiz(@Valid @RequestBody Quiz quiz) {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            quizzes.store(quiz);
+            return new ResponseEntity(quiz, headers, HttpStatus.OK);
+        }
+
+        @GetMapping(value = "/api/quizzes/{id}")
+        public ResponseEntity getQuizbyId(@PathVariable int id) {
+            Quiz quiz;
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            try {
+                quiz = quizzes.retrieve(id);
+            } catch (Exception e) {
+                return new ResponseEntity(null,headers,HttpStatus.NOT_FOUND);
+            }
+            return new ResponseEntity(quiz,headers, HttpStatus.OK);
+        }
+        @GetMapping(value = "/api/quizzes")
+        public ResponseEntity getAllQuizzes() {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            return new ResponseEntity(quizzes.retrieveAll(), headers, HttpStatus.OK);
+        }
+
+        @PostMapping(value = "/api/quizzes/{id}/solve", consumes = MediaType.APPLICATION_JSON_VALUE)
+        public ResponseEntity solve(@Valid @RequestBody Answer answer, @PathVariable int id) {
+            QuizResponse response;
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            Quiz quiz = null;
+            try {
+                quiz = quizzes.retrieve(id);
+            } catch (Exception e) {
+                response = new QuizResponse(false, "404 (Not found)");
+                return new ResponseEntity(response, headers, HttpStatus.NOT_FOUND);
+            }
+            if (Arrays.equals(answer.getAnswer(),quiz.getAnswer())) {
+                response = new QuizResponse(true,"Congratulations, you're right!");
+            }
+            else {
+                response = new QuizResponse(false,"Wrong answer! Please try again.");
+            }
+
+            return new ResponseEntity(response, headers, HttpStatus.OK);
+        }
+        }
+
+  learner_created: false
+- name: src/engine/Model/Quiz.java
+  visible: true
+  text: |
+    package engine.Model;
+
+    import com.fasterxml.jackson.annotation.JsonFilter;
+    import com.fasterxml.jackson.annotation.JsonIgnore;
+    import com.fasterxml.jackson.annotation.JsonProperty;
+    import org.springframework.stereotype.Component;
+
+    import javax.validation.constraints.NotBlank;
+    import javax.validation.constraints.NotNull;
+    import javax.validation.constraints.Size;
+    import java.util.Arrays;
+    import java.util.List;
+    @Component
+    public class Quiz {
+        @NotBlank(message = "Title is Mandatory")
+        private String title;
+        @NotBlank(message = "text is Mandatory")
+        private String text;
+        @NotNull
+        @Size(min = 2)
+        private List<String> options;
+        @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+        private int[] answer;
+        private int id;
+        public static int autoInc = 0;
+
+        public Quiz() {
+            super();
+        }
+
+        public Quiz(String title, String text, List<String> options,int[] answer) {
+            this.title = title;
+            this.text = text;
+            this.options = options;
+            this.answer = answer;
+            autoInc++;
+            this.id = autoInc;
+        }
+        public Quiz(int id, String title, String text, List<String> options,int[] answer) {
+            this.title = title;
+            this.text = text;
+            this.options = options;
+            this.answer = answer;
+            this.id = id;
+        }
+        public int[] getAnswer() {
+            return this.answer == null ? new int[0] : this.answer;
+        }
+
+        public void setAnswer(int[] answer) {
+            this.answer = answer;
+        }
+
+        public int getId() {
+            return id;
+        }
+
+        public void setId(int id) {
+            this.id = id;
+        }
+
+        public String getTitle() {
+            return title;
+        }
+
+        public void setTitle(String title) {
+            this.title = title;
+        }
+
+        public String getText() {
+            return text;
+        }
+
+        public void setText(String text) {
+            this.text = text;
+        }
+
+        public List<String> getOptions() {
+            return options;
+        }
+
+        public void setOptions(List<String> options) {
+            this.options = options;
+        }
+
+    }
+  learner_created: false
+- name: src/engine/Model/Answer.java
+  visible: true
+  text: |
+    package engine.Model;
+
+    import java.util.Arrays;
+
+    public class Answer {
+        private int[] answer;
+
+        public Answer() {
+        }
+
+        public int[] getAnswer() {
+            return answer;
+        }
+
+        public void setAnswer(int[] answer) {
+            this.answer = answer;
+        }
+        @Override
+        public String toString() {
+            return "Answer{" +
+                    "answer=" + Arrays.toString(answer) +
+                    '}';
+        }
+    }
+  learner_created: false
+- name: src/engine/ExceptionHandler/ControllerExceptionHandler.java
+  visible: true
+  text: |
+    package engine.ExceptionHandler;
+
+    import org.springframework.web.bind.annotation.ExceptionHandler;
+    import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+    import java.util.HashMap;
+    @RestControllerAdvice
+    public class ControllerExceptionHandler {
+        private static final String NOT_FOUND_MESSAGE = "Information not found for number";
+
+        @ExceptionHandler(IndexOutOfBoundsException.class)
+        public HashMap<String, String> handleIndexOutOfBoundsException(Exception e) {
+            HashMap<String, String> response = new HashMap<>();
+            response.put("message", NOT_FOUND_MESSAGE);
+            response.put("error", e.getClass().getSimpleName());
+            return response;
+        }
+    }
+  learner_created: false
+- name: src/engine/ObjectRepository/ObjectRepository.java
+  visible: true
+  text: |
+    package engine.ObjectRepository;
+
+    public interface  ObjectRepository<T> {
+        public void store(T t);
+
+        public T retrieve(int id);
+
+        public T remove(int id);
+    }
+  learner_created: false
+- name: src/engine/ObjectRepository/QuizRepository.java
+  visible: true
+  text: |
+    package engine.ObjectRepository;
+
+    import engine.Model.Quiz;
+    import org.springframework.stereotype.Component;
+    import org.springframework.stereotype.Repository;
+
+    import java.util.ArrayList;
+    import java.util.List;
+    import java.util.concurrent.atomic.AtomicInteger;
+    @Repository
+    public class QuizRepository implements ObjectRepository<Quiz> {
+        private List<Quiz> quizzes = new ArrayList<>();
+        private static final AtomicInteger quizID = new AtomicInteger();
+        @Override
+        public void store(Quiz quiz) {
+            int id = quizID.incrementAndGet();
+            quiz.setId(id);
+            quizzes.add(quiz);
+        }
+
+        @Override
+        public Quiz retrieve(int id) {
+            return quizzes.stream().filter(e -> e.getId() == id).findFirst().get();
+        }
+
+        @Override
+        public Quiz remove(int id) {
+            return null;
+        }
+        public List<Quiz> retrieveAll() {
+            return quizzes;
+        }
+    }
+  learner_created: false
+- name: test/tests/WebQuizEngineTest.java
+  visible: false
+  text: |
+    package tests;
+
+    import com.google.gson.JsonElement;
+    import com.google.gson.JsonObject;
+    import engine.WebQuizEngine;
+    import org.hyperskill.hstest.dynamic.input.DynamicTesting;
+    import org.hyperskill.hstest.dynamic.input.DynamicTestingMethod;
+    import org.hyperskill.hstest.exception.outcomes.FatalError;
+    import org.hyperskill.hstest.exception.outcomes.WrongAnswer;
+    import org.hyperskill.hstest.mocks.web.request.HttpRequest;
+    import org.hyperskill.hstest.mocks.web.response.HttpResponse;
+    import org.hyperskill.hstest.stage.SpringTest;
+    import org.hyperskill.hstest.testcase.CheckResult;
+
+    import static org.hyperskill.hstest.common.JsonUtils.getJson;
+    import static org.hyperskill.hstest.common.JsonUtils.getPrettyJson;
+    import static org.hyperskill.hstest.testing.expect.Expectation.expect;
+    import static org.hyperskill.hstest.testing.expect.json.JsonChecker.*;
+
+    public class WebQuizEngineTest extends SpringTest {
+        public WebQuizEngineTest() {
+            super(WebQuizEngine.class, "../quizdb.mv.db");
+        }
+
+        static void checkStatusCode(HttpResponse resp, int status) {
+            if (resp.getStatusCode() != status) {
+                throw new WrongAnswer(
+                    resp.getRequest().getMethod() + " " +
+                        resp.getRequest().getLocalUri() +
+                        " should respond with status code " + status + ", " +
+                        "responded: " + resp.getStatusCode() + "\n\n" +
+                        "Response body:\n\n" + resp.getContent()
+                );
+            }
+        }
+
+        private static String quiz1 =
+            "{\n" +
+                "  \"title\": \"The Java Logo\", \n" +
+                "  \"text\": \"What is depicted on the Java logo?\",\n" +
+                "  \"options\": [\"Robot\",\"Tea leaf\",\"Cup of coffee\",\"Bug\"],\n" +
+                "  \"answer\": [2]\n" +
+                "}";
+
+        private static String quiz2 =
+            "{\n" +
+                "  \"title\": \"The Ultimate Question\",\n" +
+                "  \"text\": \"What is the answer to the Ultimate Question of Life, the Universe and Everything?\",\n" +
+                "  \"options\": [\"Everything goes right\",\"42\",\"2+2=4\",\"11011100\"],\n" +
+                "  \"answer\": [1]\n" +
+                "}";
+
+        private static String quiz3 =
+            "{\n" +
+                "  \"title\": \"Math1\",\n" +
+                "  \"text\": \"Which of the following is equal to 4?\",\n" +
+                "  \"options\": [\"1+3\",\"2+2\",\"8-1\",\"1+5\"],\n" +
+                "  \"answer\": [0,1]\n" +
+                "}";
+
+        private static String quiz4 =
+            "{\n" +
+                "  \"title\": \"Math2\",\n" +
+                "  \"text\": \"Which of the following is equal to 4?\",\n" +
+                "  \"options\": [\"1+1\",\"2+2\",\"8-1\",\"5-1\"],\n" +
+                "  \"answer\": [1,3]\n" +
+                "}";
+
+        private static String quiz5 =
+            "{\n" +
+                "  \"title\": \"Math3\",\n" +
+                "  \"text\": \"Which of the following is equal to 4?\",\n" +
+                "  \"options\": [\"2*3\",\"5*8\",\"8*0\",\"1*5\"],\n" +
+                "  \"answer\": []\n" +
+                "}";
+
+        private static String quiz6 =
+            "{\n" +
+                "  \"title\": \"Math4\",\n" +
+                "  \"text\": \"Which of the following is equal to 4?\",\n" +
+                "  \"options\": [\"2*3\",\"5*8\",\"8*0\",\"1*5\"]\n" +
+                "}";
+
+        private static String quiz7 =
+            "{\n" +
+                "  \"title\": \"Math5\",\n" +
+                "  \"text\": \"Which of the following is equal to 4?\",\n" +
+                "  \"options\": [\"2^2\",\"2+2\",\"2-2\",\"2*2\"],\n" +
+                "  \"answer\": [0,1,3]\n" +
+                "}";
+
+        private static String[] quizzes = new String[] {
+            quiz1, quiz2, quiz3, quiz4, quiz5, quiz6, quiz7
+        };
+
+        private static int[] quizIds = new int[] {
+            0, 0, 0, 0, 0, 0, 0
+        };
+
+        private static String error400noTitle =
+            "{\n" +
+                "  \"text\": \"What is the answer to the Ultimate Question of Life, the Universe and Everything?\",\n" +
+                "  \"options\": [\"Everything goes right\",\"42\",\"2+2=4\",\"11011100\"]\n" +
+                "  \"answer\": [1]\n" +
+                "}";
+
+        private static String error400emptyTitle =
+            "{\n" +
+                "  \"title\": \"\",\n" +
+                "  \"text\": \"What is the answer to the Ultimate Question of Life, the Universe and Everything?\",\n" +
+                "  \"options\": [\"Everything goes right\",\"42\",\"2+2=4\",\"11011100\"]\n" +
+                "  \"answer\": [1]\n" +
+                "}";
+
+        private static String error400noText =
+            "{\n" +
+                "  \"title\": \"123123123\",\n" +
+                "  \"options\": [\"Everything goes right\",\"42\",\"2+2=4\",\"11011100\"]\n" +
+                "  \"answer\": [1]\n" +
+                "}";
+
+        private static String error400emptyText =
+            "{\n" +
+                "  \"title\": \"The Ultimate Question\",\n" +
+                "  \"text\": \"\",\n" +
+                "  \"options\": [\"Everything goes right\",\"42\",\"2+2=4\",\"11011100\"]\n" +
+                "  \"answer\": [1]\n" +
+                "}";
+
+        private static String error400noOptions =
+            "{\n" +
+                "  \"title\": \"The Ultimate Question\",\n" +
+                "  \"text\": \"123123123\",\n" +
+                "  \"answer\": [1]\n" +
+                "}";
+
+        private static String error400emptyOptions =
+            "{\n" +
+                "  \"title\": \"The Ultimate Question\",\n" +
+                "  \"text\": \"What is the answer to the Ultimate Question of Life, the Universe and Everything?\",\n" +
+                "  \"options\": [ ]\n" +
+                "  \"answer\": [ ]\n" +
+                "}";
+
+        private static String error400oneOption =
+            "{\n" +
+                "  \"title\": \"The Ultimate Question\",\n" +
+                "  \"text\": \"What is the answer to the Ultimate Question of Life, the Universe and Everything?\",\n" +
+                "  \"options\": [\"Everything goes right\"]\n" +
+                "  \"answer\": [0]\n" +
+                "}";
+
+        @DynamicTestingMethod
+        DynamicTesting[] dt = new DynamicTesting[] {
+            () -> testAllQuizzes(0),
+
+            () -> testCreateQuiz(0),
+            () -> testQuizExists(0),
+            () -> testQuizNotExists(0),
+
+            () -> testAllQuizzes(1),
+
+            () -> testCreateQuiz(1),
+            () -> testQuizExists(1),
+            () -> testQuizNotExists(1),
+
+            () -> testAllQuizzes(2),
+
+            () -> checkQuizSuccess(quizIds[0], "[0]", false),
+            () -> checkQuizSuccess(quizIds[0], "[1]", false),
+            () -> checkQuizSuccess(quizIds[0], "[2]", true),
+            () -> checkQuizSuccess(quizIds[0], "[3]", false),
+
+            () -> checkQuizSuccess(quizIds[1], "[0]", false),
+            () -> checkQuizSuccess(quizIds[1], "[1]", true),
+            () -> checkQuizSuccess(quizIds[1], "[2]", false),
+            () -> checkQuizSuccess(quizIds[1], "[3]", false),
+
+            () -> testAllQuizzes(2),
+            this::reloadServer,
+            () -> testAllQuizzes(2),
+            () -> checkQuizSuccess(quizIds[0], "[2]", true),
+            () -> checkQuizSuccess(quizIds[0], "[3]", false),
+            () -> checkQuizSuccess(quizIds[1], "[0]", false),
+            () -> checkQuizSuccess(quizIds[1], "[1]", true),
+
+            () -> addIncorrectQuiz(error400noTitle),
+            () -> addIncorrectQuiz(error400emptyTitle),
+            () -> addIncorrectQuiz(error400noText),
+            () -> addIncorrectQuiz(error400emptyText),
+            () -> addIncorrectQuiz(error400noOptions),
+            () -> addIncorrectQuiz(error400emptyOptions),
+            () -> addIncorrectQuiz(error400oneOption),
+
+            () -> testCreateQuiz(2),
+            () -> testQuizExists(2),
+            () -> testQuizNotExists(2),
+            () -> checkQuizSuccess(quizIds[2], "[]", false),
+            () -> checkQuizSuccess(quizIds[2], "[0]", false),
+            () -> checkQuizSuccess(quizIds[2], "[1]", false),
+            () -> checkQuizSuccess(quizIds[2], "[2]", false),
+            () -> checkQuizSuccess(quizIds[2], "[3]", false),
+            () -> checkQuizSuccess(quizIds[2], "[0,1]", true),
+            () -> checkQuizSuccess(quizIds[2], "[0,2]", false),
+            () -> checkQuizSuccess(quizIds[2], "[0,3]", false),
+            () -> checkQuizSuccess(quizIds[2], "[1,2]", false),
+            () -> checkQuizSuccess(quizIds[2], "[1,3]", false),
+            () -> checkQuizSuccess(quizIds[2], "[2,3]", false),
+            () -> checkQuizSuccess(quizIds[2], "[0,1,2]", false),
+            () -> checkQuizSuccess(quizIds[2], "[0,1,3]", false),
+            () -> checkQuizSuccess(quizIds[2], "[1,2,3]", false),
+            () -> checkQuizSuccess(quizIds[2], "[0,1,2,3]", false),
+
+            () -> testCreateQuiz(3),
+            () -> testQuizExists(3),
+            () -> testQuizNotExists(3),
+            () -> checkQuizSuccess(quizIds[3], "[]", false),
+            () -> checkQuizSuccess(quizIds[3], "[0]", false),
+            () -> checkQuizSuccess(quizIds[3], "[1]", false),
+            () -> checkQuizSuccess(quizIds[3], "[2]", false),
+            () -> checkQuizSuccess(quizIds[3], "[3]", false),
+            () -> checkQuizSuccess(quizIds[3], "[0,1]", false),
+            () -> checkQuizSuccess(quizIds[3], "[0,2]", false),
+            () -> checkQuizSuccess(quizIds[3], "[0,3]", false),
+            () -> checkQuizSuccess(quizIds[3], "[1,2]", false),
+            () -> checkQuizSuccess(quizIds[3], "[1,3]", true),
+            () -> checkQuizSuccess(quizIds[3], "[2,3]", false),
+            () -> checkQuizSuccess(quizIds[3], "[0,1,2]", false),
+            () -> checkQuizSuccess(quizIds[3], "[0,1,3]", false),
+            () -> checkQuizSuccess(quizIds[3], "[1,2,3]", false),
+            () -> checkQuizSuccess(quizIds[3], "[0,1,2,3]", false),
+
+            () -> testCreateQuiz(4),
+            () -> testQuizExists(4),
+            () -> testQuizNotExists(4),
+            () -> checkQuizSuccess(quizIds[4], "[]", true),
+            () -> checkQuizSuccess(quizIds[4], "[0]", false),
+            () -> checkQuizSuccess(quizIds[4], "[1]", false),
+            () -> checkQuizSuccess(quizIds[4], "[2]", false),
+            () -> checkQuizSuccess(quizIds[4], "[3]", false),
+            () -> checkQuizSuccess(quizIds[4], "[0,1]", false),
+            () -> checkQuizSuccess(quizIds[4], "[0,2]", false),
+            () -> checkQuizSuccess(quizIds[4], "[0,3]", false),
+            () -> checkQuizSuccess(quizIds[4], "[1,2]", false),
+            () -> checkQuizSuccess(quizIds[4], "[1,3]", false),
+            () -> checkQuizSuccess(quizIds[4], "[2,3]", false),
+            () -> checkQuizSuccess(quizIds[4], "[0,1,2]", false),
+            () -> checkQuizSuccess(quizIds[4], "[0,1,3]", false),
+            () -> checkQuizSuccess(quizIds[4], "[1,2,3]", false),
+            () -> checkQuizSuccess(quizIds[4], "[0,1,2,3]", false),
+
+            () -> testCreateQuiz(5),
+            () -> testQuizExists(5),
+            () -> testQuizNotExists(5),
+            () -> checkQuizSuccess(quizIds[5], "[]", true),
+            () -> checkQuizSuccess(quizIds[5], "[0]", false),
+            () -> checkQuizSuccess(quizIds[5], "[1]", false),
+            () -> checkQuizSuccess(quizIds[5], "[2]", false),
+            () -> checkQuizSuccess(quizIds[5], "[3]", false),
+            () -> checkQuizSuccess(quizIds[5], "[0,1]", false),
+            () -> checkQuizSuccess(quizIds[5], "[0,2]", false),
+            () -> checkQuizSuccess(quizIds[5], "[0,3]", false),
+            () -> checkQuizSuccess(quizIds[5], "[1,2]", false),
+            () -> checkQuizSuccess(quizIds[5], "[1,3]", false),
+            () -> checkQuizSuccess(quizIds[5], "[2,3]", false),
+            () -> checkQuizSuccess(quizIds[5], "[0,1,2]", false),
+            () -> checkQuizSuccess(quizIds[5], "[0,1,3]", false),
+            () -> checkQuizSuccess(quizIds[5], "[1,2,3]", false),
+            () -> checkQuizSuccess(quizIds[5], "[0,1,2,3]", false),
+
+            () -> testCreateQuiz(6),
+            () -> testQuizExists(6),
+            () -> testQuizNotExists(6),
+            () -> checkQuizSuccess(quizIds[6], "[]", false),
+            () -> checkQuizSuccess(quizIds[6], "[0]", false),
+            () -> checkQuizSuccess(quizIds[6], "[1]", false),
+            () -> checkQuizSuccess(quizIds[6], "[2]", false),
+            () -> checkQuizSuccess(quizIds[6], "[3]", false),
+            () -> checkQuizSuccess(quizIds[6], "[0,1]", false),
+            () -> checkQuizSuccess(quizIds[6], "[0,2]", false),
+            () -> checkQuizSuccess(quizIds[6], "[0,3]", false),
+            () -> checkQuizSuccess(quizIds[6], "[1,2]", false),
+            () -> checkQuizSuccess(quizIds[6], "[1,3]", false),
+            () -> checkQuizSuccess(quizIds[6], "[2,3]", false),
+            () -> checkQuizSuccess(quizIds[6], "[0,1,2]", false),
+            () -> checkQuizSuccess(quizIds[6], "[0,1,3]", true),
+            () -> checkQuizSuccess(quizIds[6], "[1,2,3]", false),
+            () -> checkQuizSuccess(quizIds[6], "[0,1,2,3]", false),
+
+            () -> testAllQuizzes(7),
+            this::reloadServer,
+            () -> testAllQuizzes(7),
+            () -> checkQuizSuccess(quizIds[5], "[]", true),
+            () -> checkQuizSuccess(quizIds[5], "[0]", false),
+            () -> checkQuizSuccess(quizIds[6], "[0,1,2]", false),
+            () -> checkQuizSuccess(quizIds[6], "[0,1,3]", true),
+        };
+
+        private CheckResult testCreateQuiz(int quizNum) {
+            String url = "/api/quizzes";
+            HttpResponse resp = post(url, quizzes[quizNum]).send();
+            checkStatusCode(resp, 200);
+
+            expect(resp.getContent()).asJson().check(
+                isObject()
+                    .value("id", isInteger(i -> {
+                        quizIds[quizNum] = i;
+                        return true;
+                    }))
+                    .anyOtherValues()
+            );
+
+            return CheckResult.correct();
+        }
+
+        private CheckResult testQuizExists(int quizNum) {
+            int quizId = quizIds[quizNum];
+            String quiz = quizzes[quizNum];
+
+            String url = "/api/quizzes/" + quizId;
+            HttpResponse resp = get(url).send();
+            checkStatusCode(resp, 200);
+
+            JsonObject rightQuiz = getJson(quiz).getAsJsonObject();
+            rightQuiz.remove("answer");
+            rightQuiz.addProperty("id", quizId);
+
+            expect(getPrettyJson(rightQuiz)).asJson().check(
+                isObject()
+                    .value("id", quizId)
+                    .value("title", isString())
+                    .value("text", isString())
+                    .value("options", isArray(any()))
+            );
+
+            JsonElement json = resp.getJson();
+
+            CheckResult wrongResponse = CheckResult.wrong(
+                "The quiz sent to the program looked like this:\n" +
+                    getPrettyJson(rightQuiz) + "\n\n" +
+                    "But the received quiz looks like that:\n" +
+                    getPrettyJson(json)
+            );
+
+            if (!json.isJsonObject()) {
+                return wrongResponse;
+            }
+
+            JsonObject obj = json.getAsJsonObject();
+
+            if (!rightQuiz.equals(obj)) {
+                return wrongResponse;
+            }
+
+            return CheckResult.correct();
+        }
+
+        private CheckResult testQuizNotExists(int quizNum) {
+            int quizId = quizIds[quizNum];
+
+            String url = "/api/quizzes/" + (quizId + 125);
+            HttpResponse resp = get(url).send();
+            checkStatusCode(resp, 404);
+
+            return CheckResult.correct();
+        }
+
+        private CheckResult testAllQuizzes(int count) {
+            String url = "/api/quizzes";
+            HttpResponse resp = get(url).send();
+            checkStatusCode(resp, 200);
+
+            expect(resp.getContent()).asJson().check(
+                isArray(count, isObject().anyOtherValues())
+            );
+
+            return CheckResult.correct();
+        }
+
+        private CheckResult checkQuizSuccess(int quizNum, String answerSent, boolean shouldResponse) {
+            String url = "/api/quizzes/" + quizNum + "/solve";
+
+            HttpRequest req = post(url, "{" + " \"answer\" : " + answerSent + "}");
+            HttpResponse resp = req.send();
+            checkStatusCode(resp, 200);
+
+            expect(resp.getContent()).asJson().check(
+                isObject()
+                    .value("success", shouldResponse)
+                    .value("feedback", isString())
+            );
+
+            return CheckResult.correct();
+        }
+
+        private CheckResult addIncorrectQuiz(String quiz) {
+            String url = "/api/quizzes";
+            HttpResponse resp = post(url, quiz).send();
+            checkStatusCode(resp, 400);
+            return CheckResult.correct();
+        }
+
+        private CheckResult reloadServer() {
+            try {
+                reloadSpring();
+            } catch (Exception ex) {
+                throw new FatalError(ex.getMessage());
+            }
+            return CheckResult.correct();
+        }
+    }
+  learner_created: false
+- name: src/engine/DBModel/QuizOption.java
+  visible: true
+  learner_created: true
+- name: src/engine/DBModel/QuizAnswer.java
+  visible: true
+  learner_created: true
+- name: src/engine/DBModel/DBQuiz.java
+  visible: true
+  learner_created: true
+- name: src/engine/ExceptionHandler/ResourceNotFoundException.java
+  visible: true
+  learner_created: true
+- name: src/engine/ExceptionHandler/ErrorDetails.java
+  visible: true
+  learner_created: true
+- name: src/engine/ExceptionHandler/GlobalExceptionHandler.java
+  visible: true
+  learner_created: true
+- name: src/engine/DBQuizRepository.java
+  visible: true
+  learner_created: true
+feedback_link: https://hyperskill.org/projects/91/stages/507/implement
+status: Solved
+feedback:
+  message: Congratulations! Continue on <a href="https://hyperskill.org/projects/91/stages/507/implement">JetBrains
+    Academy</a>
+  time: Tue, 08 Sep 2020 04:16:23 UTC
+record: 4
